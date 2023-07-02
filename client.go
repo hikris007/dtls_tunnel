@@ -171,7 +171,7 @@ func (c *Client) mapperGarbageCollector() {
 	defer ticker.Stop()
 
 	handler := func(key string, mapper *ClientMapper) bool {
-		if mapper.activeRecorder.IsTimeout(time.Second * 60) {
+		if mapper.activeRecorder.IsTimeout(time.Minute * 30) {
 			mapper.Stop()
 			logger.Info(FormatString("Clean mapper: %s", key))
 		}

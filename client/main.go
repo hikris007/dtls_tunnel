@@ -11,7 +11,7 @@ import (
 var logger *zap.Logger
 
 func init() {
-	logger = zap.NewExample()
+	logger, _ := zap.NewProduction()
 	dtls_tunnel.SetLogger(logger)
 }
 

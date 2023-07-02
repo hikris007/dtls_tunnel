@@ -131,7 +131,7 @@ func (sm *ServerMapper) runInLoop(wg *sync.WaitGroup) {
 func (sm *ServerMapper) GarbageCollector() {
 	defer sm.wg.Done()
 
-	ticker := time.NewTicker(time.Second)
+	ticker := time.NewTicker(time.Second * 5)
 	defer ticker.Stop()
 
 	for {
@@ -140,7 +140,7 @@ func (sm *ServerMapper) GarbageCollector() {
 			return
 
 		case <-ticker.C:
-			if sm.activeRecorder.IsTimeout(time.Second * 60) {
+			if sm.activeRecorder.IsTimeout(time.Minute * 30) {
 				sm.Stop()
 				logger.Info(FormatString("Clean mapper: %s", sm.srcConnection.RemoteAddr().String()))
 			}
