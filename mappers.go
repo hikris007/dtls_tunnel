@@ -7,6 +7,7 @@ type Mappers interface {
 	Get(string) *ClientMapper
 	Exist(string) bool
 	Delete(string)
+	Range(func(key string, mapper *ClientMapper) bool)
 }
 
 type MappersBasedSyncMap struct {
@@ -32,10 +33,17 @@ func (mappers *MappersBasedSyncMap) Get(key string) *ClientMapper {
 }
 
 func (mappers *MappersBasedSyncMap) Delete(key string) {
-	mappers.Delete(key)
+	mappers.mappers.Delete(key)
 }
 
 func (mappers *MappersBasedSyncMap) Exist(key string) bool {
 	_, isExist := mappers.mappers.Load(key)
 	return isExist
+}
+
+func (mappers *MappersBasedSyncMap) Range(f func(key string, mapper *ClientMapper) bool) {
+	withConvert := func(key interface{}, value interface{}) bool {
+		return f(key.(string), value.(*ClientMapper))
+	}
+	mappers.mappers.Range(withConvert)
 }

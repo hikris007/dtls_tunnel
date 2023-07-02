@@ -3,7 +3,9 @@ package dtls_tunnel
 import (
 	"context"
 	"crypto/tls"
+	"io"
 	"net"
+	"os"
 	"sync"
 	"time"
 
@@ -30,19 +32,22 @@ type ClientMapper struct {
 
 	// 处理 readQueue 的队列和处理 writeQueue的队列的携程会用到
 	wg *sync.WaitGroup
+
+	activeRecorder *ActiveRecorder
 }
 
 func NewClientMapper(client *Client, srcAddress *net.UDPAddr, parentCtx context.Context) *ClientMapper {
 	ctx, cancel := context.WithCancel(parentCtx)
 
 	clientMapper := &ClientMapper{
-		client:     client,
-		srcAddress: CloneUdpAddr(srcAddress),
-		readQueue:  make(chan *Payload, client.config.PackageBufferCount),
-		writeQueue: make(chan *Payload, client.config.PackageBufferCount),
-		ctx:        ctx,
-		cancelFunc: cancel,
-		wg:         &sync.WaitGroup{},
+		client:         client,
+		srcAddress:     CloneUdpAddr(srcAddress),
+		readQueue:      make(chan *Payload, client.config.PackageBufferCount),
+		writeQueue:     make(chan *Payload, client.config.PackageBufferCount),
+		ctx:            ctx,
+		cancelFunc:     cancel,
+		wg:             &sync.WaitGroup{},
+		activeRecorder: NewActiveRecorder(time.Now(), time.Now()),
 	}
 
 	return clientMapper
@@ -58,6 +63,9 @@ func (cm *ClientMapper) Run(wg *sync.WaitGroup) error {
 	if err := cm.clean(); err != nil {
 		return err
 	}
+
+	// 删除映射
+	cm.client.handleMapperDestroy(cm.srcAddress)
 
 	return nil
 }
@@ -107,6 +115,10 @@ func (cm *ClientMapper) handleWrite() {
 		case <-cm.ctx.Done():
 			return
 
+			// 读取超时
+		case <-time.After(READ_TIMEOUT):
+			continue
+
 		case payload = <-cm.writeQueue:
 			n, err = cm.tunnel.Write(payload.Data())
 
@@ -126,6 +138,7 @@ func (cm *ClientMapper) handleWrite() {
 				return
 			}
 
+			cm.activeRecorder.RefreshLastWrite()
 			RecoveryPayload(payload, cm.client.payloadPool)
 		}
 	}
@@ -146,7 +159,24 @@ func (cm *ClientMapper) handleRead() {
 				continue
 			}
 
+			if err := cm.tunnel.SetReadDeadline(time.Now().Add(READ_TIMEOUT)); err != nil {
+				logger.Error(FormatString("Failed to set write deadline: %s", err.Error()))
+				RecoveryPayload(payload, cm.client.payloadPool)
+				return
+			}
 			payload.payloadLength, err = cm.tunnel.Read(payload.container)
+
+			if os.IsTimeout(err) {
+				RecoveryPayload(payload, cm.client.payloadPool)
+				continue
+			}
+
+			if err == io.EOF {
+				RecoveryPayload(payload, cm.client.payloadPool)
+				cm.Stop()
+				return
+			}
+
 			if err != nil {
 				logger.Error(FormatString("Failed to read from tunnel: %s", err.Error()))
 				cm.Stop()
@@ -155,7 +185,15 @@ func (cm *ClientMapper) handleRead() {
 				return
 			}
 
-			cm.readQueue <- payload
+			cm.activeRecorder.RefreshLastRead()
+			select {
+			case <-time.After(WRITE_TIMEOUT):
+				RecoveryPayload(payload, cm.client.payloadPool)
+				continue
+
+			case cm.readQueue <- payload:
+				continue
+			}
 		}
 	}
 }
@@ -167,6 +205,9 @@ func (cm *ClientMapper) handleReadQueue() {
 		select {
 		case <-cm.ctx.Done():
 			return
+
+		case <-time.After(READ_TIMEOUT):
+			continue
 
 		case payload := <-cm.readQueue:
 			cm.client.HandleRead(NewPackage(CloneUdpAddr(cm.srcAddress), nil, payload))

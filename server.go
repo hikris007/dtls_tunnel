@@ -18,6 +18,11 @@ type Server struct {
 	cancelFunc context.CancelFunc
 }
 
+type AcceptResult struct {
+	Conn net.Conn
+	Err  error
+}
+
 func NewServer(config *ServerConfig) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 
@@ -84,17 +89,24 @@ func (s *Server) unInit() error {
 func (s *Server) handleConnection() {
 	defer s.wg.Done()
 
+	acceptChannel := make(chan *AcceptResult)
+	go s.handleAccept(acceptChannel)
+
 	for {
 		select {
 		case <-s.ctx.Done():
 			return
 
-		default:
-			conn, err := s.listener.Accept()
+		case acceptResult := <-acceptChannel:
+			var conn net.Conn = acceptResult.Conn
+			var err error = acceptResult.Err
+
 			if err != nil {
 				logger.Error(FormatString("Failed to accept connection: %s", err.Error()))
 				continue
 			}
+
+			logger.Info(FormatString("New mapper: %s", conn.RemoteAddr().String()))
 
 			mapper := NewServerMapper(
 				s,
@@ -108,6 +120,16 @@ func (s *Server) handleConnection() {
 					logger.Error(FormatString("Failed to run mapper: %s", err.Error()))
 				}
 			}()
+		}
+	}
+}
+
+func (s *Server) handleAccept(acceptChannel chan *AcceptResult) {
+	for {
+		conn, err := s.listener.Accept()
+		acceptChannel <- &AcceptResult{
+			Conn: conn,
+			Err:  err,
 		}
 	}
 }

@@ -28,6 +28,6 @@ func (p *PayloadPool) Get() (*Payload, error) {
 }
 
 func (p *PayloadPool) Put(payload *Payload) error {
-	p.payloadPool.Put(p)
+	p.payloadPool.Put(payload)
 	return nil
 }
