@@ -11,8 +11,9 @@ import (
 var logger *zap.Logger
 
 func init() {
-	logger, _ := zap.NewProduction()
-	dtls_tunnel.SetLogger(logger)
+	l, _ := zap.NewProduction()
+	logger = l
+	dtls_tunnel.SetLogger(l)
 }
 
 func main() {
