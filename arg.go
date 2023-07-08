@@ -17,6 +17,12 @@ func ParseCommonConfig() (*CommonConfig, error) {
 	var certPath string
 	var rootCertPath string
 
+	var serverMode bool = false
+	var clientMode bool = false
+
+	flag.BoolVar(&clientMode, "c", false, "")
+	flag.BoolVar(&serverMode, "s", false, "")
+
 	flag.IntVar(&config.PackageBufferSize, "pbs", 1500, "")
 	flag.IntVar(&config.PackageBufferCount, "pbc", 1500, "")
 
@@ -28,6 +34,16 @@ func ParseCommonConfig() (*CommonConfig, error) {
 	flag.StringVar(&rootCertPath, "rc", "", "root cert")
 
 	flag.Parse()
+
+	if serverMode == clientMode {
+		return nil, MakeErrorWithErrMsg("Cannot run both mode as some time")
+	}
+
+	if serverMode {
+		config.RunMethod = "server"
+	} else if clientMode {
+		config.RunMethod = "client"
+	}
 
 	address, err := net.ResolveUDPAddr("udp", listenAddressWithPort)
 	if err != nil {
@@ -64,12 +80,7 @@ func ParseCommonConfig() (*CommonConfig, error) {
 	return config, nil
 }
 
-func ParseClientConfig() (*ClientConfig, error) {
-	commonConfig, err := ParseCommonConfig()
-	if err != nil {
-		return nil, MakeErrorWithErrMsg("Failed to parse common config: %s", err.Error())
-	}
-
+func ParseClientConfig(commonConfig *CommonConfig) (*ClientConfig, error) {
 	config := &ClientConfig{}
 	config.PackageBufferSize = commonConfig.PackageBufferCount
 	config.PackageBufferCount = commonConfig.PackageBufferCount
@@ -83,12 +94,7 @@ func ParseClientConfig() (*ClientConfig, error) {
 	return config, nil
 }
 
-func ParseServerConfig() (*ServerConfig, error) {
-	commonConfig, err := ParseCommonConfig()
-	if err != nil {
-		return nil, MakeErrorWithErrMsg("Failed to parse common config: %s", err.Error())
-	}
-
+func ParseServerConfig(commonConfig *CommonConfig) (*ServerConfig, error) {
 	config := &ServerConfig{}
 	config.PackageBufferSize = commonConfig.PackageBufferCount
 	config.PackageBufferCount = commonConfig.PackageBufferCount

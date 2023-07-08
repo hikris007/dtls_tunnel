@@ -61,6 +61,10 @@ func (c *Client) Run() error {
 	c.mappersWg.Wait()
 	c.wg.Wait()
 
+	if err := c.clean(); err != nil {
+		return err
+	}
+
 	logger.Info(FormatString("The client is shutdown"))
 
 	return nil
@@ -129,12 +133,16 @@ func (c *Client) readWorker() {
 	var pack *Package = nil
 	var err error = nil
 
+	var timer = time.NewTimer(READ_TIMEOUT)
+	defer timer.Stop()
+
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 
-		case <-time.After(READ_TIMEOUT):
+		case <-timer.C:
+			timer.Reset(READ_TIMEOUT)
 			continue
 
 		case pack = <-c.readQueue:
@@ -149,16 +157,19 @@ func (c *Client) readWorker() {
 			)
 
 			if os.IsTimeout(err) {
+				timer.Reset(READ_TIMEOUT)
 				continue
 			}
 
 			if err != nil {
 				logger.Warn(FormatString("Failed to write to %s: %s", pack.SrcAddress.String(), err.Error()))
 				RecoveryPayload(pack.Payload, c.payloadPool)
+				timer.Reset(READ_TIMEOUT)
 				continue
 			}
 
 			RecoveryPayload(pack.Payload, c.payloadPool)
+			timer.Reset(READ_TIMEOUT)
 		}
 	}
 

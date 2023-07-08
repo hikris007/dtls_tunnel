@@ -109,6 +109,9 @@ func (cm *ClientMapper) handleWrite() {
 	var n int = 0
 	var err error = nil
 
+	var timer = time.NewTimer(READ_TIMEOUT)
+	defer timer.Stop()
+
 	for {
 		select {
 		// 等待本地的context关闭
@@ -116,7 +119,8 @@ func (cm *ClientMapper) handleWrite() {
 			return
 
 			// 读取超时
-		case <-time.After(READ_TIMEOUT):
+		case <-timer.C:
+			timer.Reset(READ_TIMEOUT)
 			continue
 
 		case payload = <-cm.writeQueue:
@@ -140,12 +144,16 @@ func (cm *ClientMapper) handleWrite() {
 
 			cm.activeRecorder.RefreshLastWrite()
 			RecoveryPayload(payload, cm.client.payloadPool)
+			timer.Reset(READ_TIMEOUT)
 		}
 	}
 }
 
 func (cm *ClientMapper) handleRead() {
 	defer cm.wg.Done()
+
+	var writeTimer = time.NewTimer(WRITE_TIMEOUT)
+	defer writeTimer.Stop()
 
 	for {
 		select {
@@ -186,8 +194,9 @@ func (cm *ClientMapper) handleRead() {
 			}
 
 			cm.activeRecorder.RefreshLastRead()
+			writeTimer.Reset(WRITE_TIMEOUT)
 			select {
-			case <-time.After(WRITE_TIMEOUT):
+			case <-writeTimer.C:
 				RecoveryPayload(payload, cm.client.payloadPool)
 				continue
 
@@ -201,16 +210,21 @@ func (cm *ClientMapper) handleRead() {
 func (cm *ClientMapper) handleReadQueue() {
 	defer cm.wg.Done()
 
+	var timer = time.NewTimer(READ_TIMEOUT)
+	defer timer.Stop()
+
 	for {
 		select {
 		case <-cm.ctx.Done():
 			return
 
-		case <-time.After(READ_TIMEOUT):
+		case <-timer.C:
+			timer.Reset(READ_TIMEOUT)
 			continue
 
 		case payload := <-cm.readQueue:
 			cm.client.HandleRead(NewPackage(CloneUdpAddr(cm.srcAddress), nil, payload))
+			timer.Reset(READ_TIMEOUT)
 		}
 	}
 }

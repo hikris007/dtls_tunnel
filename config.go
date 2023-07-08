@@ -7,6 +7,8 @@ import (
 )
 
 type CommonConfig struct {
+	RunMethod string
+	
 	// 在 Read 数据的时候传入的缓冲区大小
 	PackageBufferSize int
 
