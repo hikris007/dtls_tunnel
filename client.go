@@ -137,12 +137,12 @@ func (c *Client) readWorker() {
 	defer timer.Stop()
 
 	for {
+		timer.Reset(READ_TIMEOUT)
 		select {
 		case <-c.ctx.Done():
 			return
 
 		case <-timer.C:
-			timer.Reset(READ_TIMEOUT)
 			continue
 
 		case pack = <-c.readQueue:
@@ -157,19 +157,16 @@ func (c *Client) readWorker() {
 			)
 
 			if os.IsTimeout(err) {
-				timer.Reset(READ_TIMEOUT)
 				continue
 			}
 
 			if err != nil {
 				logger.Warn(FormatString("Failed to write to %s: %s", pack.SrcAddress.String(), err.Error()))
 				RecoveryPayload(pack.Payload, c.payloadPool)
-				timer.Reset(READ_TIMEOUT)
 				continue
 			}
 
 			RecoveryPayload(pack.Payload, c.payloadPool)
-			timer.Reset(READ_TIMEOUT)
 		}
 	}
 
